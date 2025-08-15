@@ -22,7 +22,7 @@ int main (int argc, char **argv)
 
     if (key_length == 0)
     {
-        fprintf(stderr, "An error occurred: Length must be an integer greater than 0.\n");
+        fprintf(stderr, "An error occurred: Length must be an integer greater than 0\n");
         return EXIT_FAILURE;
     }
     
