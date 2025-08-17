@@ -7,6 +7,8 @@
 #include <netinet/in.h>
 #include <sys/wait.h>
 
+#define BUFFER_SIZE 140000
+
 /* ----------------------------------------------------------------
 Error function that prints an error message.
 ------------------------------------------------------------------- */
@@ -166,19 +168,17 @@ returns~
 ------------------------------------------------------------------- */
 char* fullRetrieve(int sfd)
 {
-    char* received_text = NULL;
     int bytes_read = 0;
     int bytes_already_retrieved = 0;
     char* temp_text = NULL;
-    char buf[1001] = "";
+    char* buf = (char*)malloc(BUFFER_SIZE);
+    memset(buf, '\0', BUFFER_SIZE);
     size_t received_length = 0;
 
     while (!checkBuffer(buf, strlen(buf)))
     {
-        memset(buf, '\0', 1001); // clear buffer for more reading
-
         // read the client's message from the socket
-        bytes_read = recv(sfd, buf, 1000, 0);
+        bytes_read = recv(sfd, buf + strlen(buf), (BUFFER_SIZE - 1) - strlen(buf), 0);
 
         // if error reading from socket
         if (bytes_read < 0)
@@ -193,35 +193,8 @@ char* fullRetrieve(int sfd)
             close(sfd);
             return EXIT_SUCCESS;
         }
-
-        received_length += strlen(buf);
-
-        // each iteration, transfer buffer into final output
-        if (received_text == NULL)
-        {
-            received_text = strdup(buf);
-            if (received_text == NULL)
-            {
-                socketError("ERROR transfering data to server");
-            }
-        }
-        else 
-        {
-            temp_text = realloc(received_text, (received_length + 1) * sizeof(char));
-            if (temp_text == NULL)
-            {
-                socketError("ERROR transfering data to server");
-            }
-            else
-            {
-                received_text = temp_text;
-                received_text[received_length] = '\0';
-                temp_text = NULL;
-                strcat(received_text, buf);
-            }
-        }
     }
-    return received_text;
+    return buf;
 }
 
 /* ----------------------------------------------------------------
@@ -371,13 +344,10 @@ int main(int argc, char *argv[])
     // listening loop
     while(1) 
     {
-        // check child processes/connections to see if any have terminated
-        checkBgs();
-
         // there can only be 5 concurrent child processes/connections at a time
-        if (concurrent_connections == 5)
+        if (concurrent_connections >= 5)
         {
-            sleep(2);
+            checkBgs();
             continue;
         }
 
@@ -426,6 +396,8 @@ int main(int argc, char *argv[])
                 fullSend(connectionSocket, decrypted_text, strlen(decrypted_text));
 
                 free(received_text);
+                free(plain_text);
+                free(key);
                 free(decrypted_text);
 
                 // Close the connection socket for this client
@@ -437,12 +409,9 @@ int main(int argc, char *argv[])
                 addProcess(connectionSocket);
                 break;
         }
-        {
-        continue; // parent continues listening
     }
 
     // Close the listening socket
     close(listenSocket);
-    }
-return 0;
+    return 0;
 }

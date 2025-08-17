@@ -6,6 +6,8 @@
 #include <sys/socket.h> 
 #include <netdb.h>
 
+#define BUFFER_SIZE 140000
+
 /* ----------------------------------------------------------------
 Error function that prints an error message before exiting the
 process.
@@ -100,25 +102,23 @@ Retrieved string.
 ------------------------------------------------------------------- */
 char* fullRetrieve(int sfd)
 {
-    char* received_text = NULL;
     int bytes_read = 0;
     int bytes_already_retrieved = 0;
     char* temp_text = NULL;
-    char buf[1001] = "";
+    char* buf = (char*)malloc(BUFFER_SIZE);
+    memset(buf, '\0', BUFFER_SIZE);
     size_t received_length = 0;
 
     while (!checkBuffer(buf, strlen(buf)))
     {
-        memset(buf, '\0', 1001); // clear buffer for more reading
-
         // read the server's message from the socket
-        bytes_read = recv(sfd, buf, 1000, 0);
+        bytes_read = recv(sfd, buf + strlen(buf), (BUFFER_SIZE - 1) - strlen(buf), 0);
 
         // if error reading from socket
         if (bytes_read < 0)
         {
             close(sfd);
-            socketError("dec_client error: recv failed", 1);
+            socketError("enc_client error: recv failed", 1);
         }
 
         // if client socket closed
@@ -127,37 +127,8 @@ char* fullRetrieve(int sfd)
             close(sfd);
             return EXIT_SUCCESS;
         }
-
-        received_length += strlen(buf);
-
-        // each iteration, transfer buffer into final output
-        if (received_text == NULL)
-        {
-            received_text = strdup(buf);
-            if (received_text == NULL)
-            {
-                close(sfd);
-                socketError("dec_client error: error reading from socket, initial", 1);
-            }
-        }
-        else 
-        {
-            temp_text = realloc(received_text, (received_length + 1) * sizeof(char));
-            if (temp_text == NULL)
-            {
-                close(sfd);
-                socketError("dec_client error: error reading from socket, reallocation", 1);
-            }
-            else
-            {
-                received_text = temp_text;
-                received_text[received_length] = '\0';
-                temp_text = NULL;
-                strcat(received_text, buf);
-            }
-        }
     }
-    return received_text;
+    return buf;
 }
 
 /* ----------------------------------------------------------------
@@ -287,6 +258,9 @@ int main(int argc, char *argv[])
     // combine the plaintext and key for ease of sending
     text_and_key = combineStrings(plaintext, cypher_key);
 
+    free(plaintext);
+    free(cypher_key);
+
     // create a socket
     socketFD = socket(AF_INET, SOCK_STREAM, 0);
     if (socketFD < 0)
@@ -323,9 +297,13 @@ int main(int argc, char *argv[])
 
     fullSend(socketFD, text_and_key, strlen(text_and_key));
 
+    free(text_and_key);
+
     received_text = fullRetrieve(socketFD);
     
     printf("%s", received_text);
+    
+    free(received_text);
 
     close(socketFD);
 
