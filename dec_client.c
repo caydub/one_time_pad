@@ -81,7 +81,7 @@ int fullSend(int sfd, char* text_to_send, int bytes_remaining)
         if (bytes_read == -1) // error sending
         {
             close(sfd);
-            socketError("enc_client error: error during send", 1);
+            socketError("dec_client error: error during send", 1);
         }
         bytes_already_sent += bytes_read;
         bytes_remaining -= bytes_read;
@@ -118,7 +118,7 @@ char* fullRetrieve(int sfd)
         if (bytes_read < 0)
         {
             close(sfd);
-            socketError("enc_client error: recv failed", 1);
+            socketError("dec_client error: recv failed", 1);
         }
 
         // if client socket closed
@@ -137,7 +137,7 @@ char* fullRetrieve(int sfd)
             if (received_text == NULL)
             {
                 close(sfd);
-                socketError("enc_client error: error reading from socket, initial", 1);
+                socketError("dec_client error: error reading from socket, initial", 1);
             }
         }
         else 
@@ -146,7 +146,7 @@ char* fullRetrieve(int sfd)
             if (temp_text == NULL)
             {
                 close(sfd);
-                socketError("enc_client error: error reading from socket, reallocation", 1);
+                socketError("dec_client error: error reading from socket, reallocation", 1);
             }
             else
             {
@@ -181,7 +181,7 @@ void setupAddressStruct(struct sockaddr_in* address, int portNumber)
 
     if (hostInfo == NULL)
     {
-        socketError("enc_client error: error locating localhost", 1);
+        socketError("dec_client error: error locating localhost", 1);
     }
 
     // Copy the first IP address from the DNS entry to sin_addr.s_addr
@@ -228,7 +228,7 @@ char* readFile(char* path)
         {
             fclose(input_file);
             free(buf);
-            socketError("enc_client error: input contains bad characters", 1);
+            socketError("dec_client error: input contains bad characters", 1);
         }
         buf[i] = temp_char;
     }
@@ -303,21 +303,21 @@ int main(int argc, char *argv[])
         socketError("CLIENT: ERROR connecting", 1);
     }
 
-    // verify connection is to enc_server
+    // verify connection is to dec_server
     charsRead = recv(socketFD, buf, 255, 0);
     if (charsRead < 0)
     {
         close(socketFD);
-        socketError("enc_client error: recv failed", 1);
+        socketError("dec_client error: recv failed", 1);
     }
 
-    send(socketFD, "enc_client", 10, 0);
+    send(socketFD, "dec_client", 10, 0);
 
-    if (strcmp("enc_server", buf))
+    if (strcmp("dec_server", buf))
     {
         close(socketFD);
         char msg[50];
-        sprintf(msg, "Error: could not contact enc_server on port %d", atoi(argv[3]));
+        sprintf(msg, "Error: could not contact dec_server on port %d", atoi(argv[3]));
         socketError(msg, 2);
     }
 

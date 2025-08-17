@@ -35,33 +35,29 @@ int concurrent_connections = 0, newline_counter = 0;
 char* alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ ";
 
 /* ----------------------------------------------------------------
-Function encrypt: Encrypts a string consisting of capital characters
+Function decrypt: Decrypts a string consisting of capital characters
 and spaces using a provided key consisting of capital characters
 and spaces
 args~
-- s_to_be_encrypted:        String to be encrpyted		(char*)
+- s_to_be_decrypted:        String to be decrpyted		(char*)
 - key:                      Provided key                (char*)
 returns~
 0 when complete
 ------------------------------------------------------------------- */
-int encrypt(char* s_to_be_encrypted, char* key)
+int decrypt(char* s_to_be_decrypted, char* key)
 {
     char message_letter, key_letter;
-    int encrypt_index;
+    int decrypt_index;
 
-    for (int i = 0; i < strlen(s_to_be_encrypted); i++)
+    for (int i = 0; i < strlen(s_to_be_decrypted); i++)
     {
-        // ascii value of space is 32
-        if (s_to_be_encrypted[i] == ' ')
+                if (s_to_be_decrypted[i] == ' ')
         {
-            // subtracting to 26 makes it the last value of our alphabet
-            message_letter = (s_to_be_encrypted[i] - 6);
+            message_letter = (s_to_be_decrypted[i] - 6);
         } 
-        // ascii value of 'A' is 65
         else 
         {
-            // subtracting by 65 places letters at correct index in our alphabet
-            message_letter = (s_to_be_encrypted[i] - 'A');
+            message_letter = (s_to_be_decrypted[i] - 'A');
         }
 
         if (key[i] == ' ')
@@ -72,8 +68,12 @@ int encrypt(char* s_to_be_encrypted, char* key)
         {
             key_letter = key[i] - 'A';
         }
-        encrypt_index = (message_letter + key_letter) % 27;
-        s_to_be_encrypted[i] = alphabet[encrypt_index];
+        decrypt_index = (message_letter - key_letter) % 27;
+        if (decrypt_index < 0)
+        {
+            decrypt_index = decrypt_index + 27;
+        }
+        s_to_be_decrypted[i] = alphabet[decrypt_index];
     }
     return 0;
 }
@@ -114,7 +114,7 @@ Function fullSend: Sends all bytes over to client utilizing a
 loop.
 args~
 - sfd:              Client socket file descriptor		(int)
-- encrypted_text:   Buffer/string to send               (char*)
+- decrypted_text:   Buffer/string to send               (char*)
 - bytes_remaining:  Bytes left to send to client        (int)
 returns~
 0 when complete
@@ -126,7 +126,7 @@ Section 7.4.
 Website: https://beej.us/guide/bgnet/html/#sendall
 Author: Brian “Beej Jorgensen” Hall
 ------------------------------------------------------------------- */
-int fullSend(int sfd, char* encrypted_text, int bytes_remaining)
+int fullSend(int sfd, char* decrypted_text, int bytes_remaining)
 {
     int bytes_to_send;
     int bytes_already_sent = 0;
@@ -143,7 +143,7 @@ int fullSend(int sfd, char* encrypted_text, int bytes_remaining)
         {
             bytes_to_send = bytes_remaining;
         }
-        bytes_read = send(sfd, encrypted_text + bytes_already_sent, bytes_to_send, 0);
+        bytes_read = send(sfd, decrypted_text + bytes_already_sent, bytes_to_send, 0);
         if (bytes_read == -1) // error sending
         {
             socketError("ERROR writing to socket");
@@ -336,7 +336,7 @@ void setupAddressStruct(struct sockaddr_in* address, int portNumber)
 int main(int argc, char *argv[])
 {
     int connectionSocket, charsRead;
-    char* received_text = NULL, *encrypted_text;
+    char* received_text = NULL, *decrypted_text;
     char buf[256] = {0};
     struct sockaddr_in serverAddress, clientAddress;
     socklen_t sizeOfClientInfo = sizeof(clientAddress);
@@ -397,11 +397,11 @@ int main(int argc, char *argv[])
                 break;
             
             case 0: // child process
-                // verify connection is to enc_client
-                send(connectionSocket, "enc_server", 10, 0);
+                // verify connection is to dec_client
+                send(connectionSocket, "dec_server", 10, 0);
                 charsRead = recv(connectionSocket, buf, 255, 0);
 
-                if (strcmp("enc_client", buf))
+                if (strcmp("dec_client", buf))
                 {
                     close(connectionSocket);
                     return 2;
@@ -414,19 +414,19 @@ int main(int argc, char *argv[])
                 char* plain_text = strtok(received_text, "\n");
                 char* key = strtok(NULL, "\n");
 
-                // encrypt the plaintext
-                encrypt(plain_text, key);
+                // decrypt the plaintext
+                decrypt(plain_text, key);
 
                 // re add the newline to the text, was removed during tokenization
-                encrypted_text = (char *) calloc((strlen(plain_text) + 2), sizeof(char));
-                strcpy(encrypted_text, plain_text);
-                encrypted_text[strlen(plain_text)] = '\n';
+                decrypted_text = (char *) calloc((strlen(plain_text) + 2), sizeof(char));
+                strcpy(decrypted_text, plain_text);
+                decrypted_text[strlen(plain_text)] = '\n';
 
                 // send back to client
-                fullSend(connectionSocket, encrypted_text, strlen(encrypted_text));
+                fullSend(connectionSocket, decrypted_text, strlen(decrypted_text));
 
                 free(received_text);
-                free(encrypted_text);
+                free(decrypted_text);
 
                 // Close the connection socket for this client
                 close(connectionSocket);
