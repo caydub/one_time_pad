@@ -7,14 +7,14 @@
 #include <netinet/in.h>
 #include <sys/wait.h>
 
-#define BUFFER_SIZE 140000
-
 /* ----------------------------------------------------------------
-Error function that prints an error message.
+Error function that prints an error message before exiting the
+process.
 ------------------------------------------------------------------- */
-void socketError(const char *msg)
+void socketError(const char *msg, int error_code)
 {
     fprintf(stderr, "%s\n", msg);
+    exit(error_code);
 }
 
 
@@ -31,9 +31,8 @@ struct process
 /* ---------- Global Variables ---------- */
 struct process* head = NULL;
 struct process* tail = NULL;
-int last_fg_child_status = 0;
 int last_bg_child_status;
-int concurrent_connections = 0, newline_counter = 0;
+int concurrent_connections = 0;
 char* alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ ";
 
 /* ----------------------------------------------------------------
@@ -51,9 +50,9 @@ int decrypt(char* s_to_be_decrypted, char* key)
     char message_letter, key_letter;
     int decrypt_index;
 
-    for (int i = 0; i < strlen(s_to_be_decrypted); i++)
+    for (size_t i = 0; i < strlen(s_to_be_decrypted); i++)
     {
-                if (s_to_be_decrypted[i] == ' ')
+        if (s_to_be_decrypted[i] == ' ')
         {
             message_letter = (s_to_be_decrypted[i] - 6);
         } 
@@ -148,7 +147,7 @@ int fullSend(int sfd, char* decrypted_text, int bytes_remaining)
         bytes_read = send(sfd, decrypted_text + bytes_already_sent, bytes_to_send, 0);
         if (bytes_read == -1) // error sending
         {
-            socketError("ERROR writing to socket");
+            socketError("ERROR writing to socket", 1);
         }
         bytes_already_sent += bytes_read;
         bytes_remaining -= bytes_read;
@@ -161,40 +160,67 @@ Function fullRetrieve: Retrieves all bytes from client utilizing a
 loop.
 args~
 - sfd:              Client socket file descriptor		(int)
-- buf:              Buffer/string to send               (char*)
-- bytes_remaining:  Bytes left to send to client        (int)
 returns~
-0 when complete.
+Retrieved string.
 ------------------------------------------------------------------- */
 char* fullRetrieve(int sfd)
 {
+    char* received_text = NULL;
     int bytes_read = 0;
-    int bytes_already_retrieved = 0;
+    int newline_counter = 0; // local so it resets correctly for each connection
     char* temp_text = NULL;
-    char* buf = (char*)malloc(BUFFER_SIZE);
-    memset(buf, '\0', BUFFER_SIZE);
+    char buf[1001] = "";
     size_t received_length = 0;
 
     while (!checkBuffer(buf, strlen(buf)))
     {
+        memset(buf, '\0', 1001); // clear buffer for more reading
+
         // read the client's message from the socket
-        bytes_read = recv(sfd, buf + strlen(buf), (BUFFER_SIZE - 1) - strlen(buf), 0);
+        bytes_read = recv(sfd, buf, 1000, 0);
 
         // if error reading from socket
         if (bytes_read < 0)
         {
             close(sfd);
-            socketError("ERROR reading from socket");
+            socketError("ERROR reading from socket", 1);
         }
 
         // if client socket closed
         if (bytes_read == 0)
         {
             close(sfd);
-            return EXIT_SUCCESS;
+            exit(1);
+        }
+
+        received_length += strlen(buf);
+
+        // each iteration, transfer buffer into final output
+        if (received_text == NULL)
+        {
+            received_text = strdup(buf);
+            if (received_text == NULL)
+            {
+                socketError("ERROR transfering data to server", 1);
+            }
+        }
+        else 
+        {
+            temp_text = realloc(received_text, (received_length + 1) * sizeof(char));
+            if (temp_text == NULL)
+            {
+                socketError("ERROR transfering data to server", 1);
+            }
+            else
+            {
+                received_text = temp_text;
+                received_text[received_length] = '\0';
+                temp_text = NULL;
+                strcat(received_text, buf);
+            }
         }
     }
-    return buf;
+    return received_text;
 }
 
 /* ----------------------------------------------------------------
@@ -253,6 +279,7 @@ int removeProcess (pid_t pid)
 		} else {
 			prev_process = process;
 			process = process->next;
+			continue; // only decrement when a process is actually removed
 		}
         concurrent_connections--;
 	}
@@ -326,7 +353,7 @@ int main(int argc, char *argv[])
     int listenSocket = socket(AF_INET, SOCK_STREAM, 0);
     if (listenSocket < 0)
     {
-        socketError("ERROR opening socket");
+        socketError("ERROR opening socket", 1);
     }
 
     // Set up the address struct for the server socket
@@ -335,7 +362,7 @@ int main(int argc, char *argv[])
     // Associate the socket to the port
     if (bind(listenSocket, (struct sockaddr *) &serverAddress, sizeof(serverAddress)) < 0)
     {
-        socketError("ERROR on binding");
+        socketError("ERROR on binding", 1);
     }
 
     // start listening for connetions. allow up to 5 connections to queue up
@@ -344,10 +371,13 @@ int main(int argc, char *argv[])
     // listening loop
     while(1) 
     {
+        // check child processes/connections to see if any have terminated
+        checkBgs();
+
         // there can only be 5 concurrent child processes/connections at a time
         if (concurrent_connections >= 5)
         {
-            checkBgs();
+            sleep(2);
             continue;
         }
 
@@ -356,7 +386,7 @@ int main(int argc, char *argv[])
 
         if (connectionSocket < 0)
         {
-            socketError("ERROR on accept");
+            socketError("ERROR on accept", 1);
         }
 
         spawn_pid = fork();
@@ -396,8 +426,6 @@ int main(int argc, char *argv[])
                 fullSend(connectionSocket, decrypted_text, strlen(decrypted_text));
 
                 free(received_text);
-                free(plain_text);
-                free(key);
                 free(decrypted_text);
 
                 // Close the connection socket for this client
@@ -406,9 +434,10 @@ int main(int argc, char *argv[])
 
             default:
                 // add child pid into linked list to keep track of when it ends
-                addProcess(connectionSocket);
+                addProcess(spawn_pid);
                 break;
         }
+        continue; // parent continues listening
     }
 
     // Close the listening socket

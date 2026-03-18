@@ -6,8 +6,6 @@
 #include <sys/socket.h> 
 #include <netdb.h>
 
-#define BUFFER_SIZE 140000
-
 /* ----------------------------------------------------------------
 Error function that prints an error message before exiting the
 process.
@@ -88,11 +86,12 @@ int fullSend(int sfd, char* text_to_send, int bytes_remaining)
         bytes_already_sent += bytes_read;
         bytes_remaining -= bytes_read;
     }
+
     return 0;
 }
 
 /* ----------------------------------------------------------------
-Function fullRetrieve: Retrieves all bytes fromt client utilizing a
+Function fullRetrieve: Retrieves all bytes from client utilizing a
 loop.
 args~
 - sfd:              Client socket file descriptor		(int)
@@ -101,17 +100,18 @@ Retrieved string.
 ------------------------------------------------------------------- */
 char* fullRetrieve(int sfd)
 {
+    char* received_text = NULL;
     int bytes_read = 0;
-    int bytes_already_retrieved = 0;
     char* temp_text = NULL;
-    char* buf = (char*)malloc(BUFFER_SIZE);
-    memset(buf, '\0', BUFFER_SIZE);
+    char buf[1001] = "";
     size_t received_length = 0;
 
     while (!checkBuffer(buf, strlen(buf)))
     {
+        memset(buf, '\0', 1001); // clear buffer for more reading
+
         // read the server's message from the socket
-        bytes_read = recv(sfd, buf + strlen(buf), (BUFFER_SIZE - 1) - strlen(buf), 0);
+        bytes_read = recv(sfd, buf, 1000, 0);
 
         // if error reading from socket
         if (bytes_read < 0)
@@ -124,10 +124,39 @@ char* fullRetrieve(int sfd)
         if (bytes_read == 0)
         {
             close(sfd);
-            return EXIT_SUCCESS;
+            exit(1);
+        }
+
+        received_length += strlen(buf);
+
+        // each iteration, transfer buffer into final output
+        if (received_text == NULL)
+        {
+            received_text = strdup(buf);
+            if (received_text == NULL)
+            {
+                close(sfd);
+                socketError("enc_client error: error reading from socket, initial", 1);
+            }
+        }
+        else 
+        {
+            temp_text = realloc(received_text, (received_length + 1) * sizeof(char));
+            if (temp_text == NULL)
+            {
+                close(sfd);
+                socketError("enc_client error: error reading from socket, reallocation", 1);
+            }
+            else
+            {
+                received_text = temp_text;
+                received_text[received_length] = '\0';
+                temp_text = NULL;
+                strcat(received_text, buf);
+            }
         }
     }
-    return buf;
+    return received_text;
 }
 
 /* ----------------------------------------------------------------
@@ -230,7 +259,7 @@ char* combineStrings(char* string_1, char* string_2)
 ------------------------------------------------------------------- */
 int main(int argc, char *argv[])
 {
-    int socketFD, charsWritten, charsRead;
+    int socketFD, charsRead;
     char *plaintext = NULL, *cypher_key = NULL, *text_and_key, *received_text;
     struct sockaddr_in serverAddress;
     char buf[256] = {0};
@@ -248,7 +277,6 @@ int main(int argc, char *argv[])
 
     if (strlen(cypher_key) < strlen(plaintext))
     {
-        close(socketFD);
         char msg[100];
         sprintf(msg, "Error: key '%s' is too short", argv[2]);
         socketError(msg, 2);
@@ -256,9 +284,6 @@ int main(int argc, char *argv[])
 
     // combine the plaintext and key for ease of sending
     text_and_key = combineStrings(plaintext, cypher_key);
-
-    free(plaintext);
-    free(cypher_key);
 
     // create a socket
     socketFD = socket(AF_INET, SOCK_STREAM, 0);
@@ -296,14 +321,14 @@ int main(int argc, char *argv[])
 
     fullSend(socketFD, text_and_key, strlen(text_and_key));
 
-    free(text_and_key);
-
     received_text = fullRetrieve(socketFD);
     
     printf("%s", received_text);
 
+    free(plaintext);
+    free(cypher_key);
+    free(text_and_key);
     free(received_text);
-
     close(socketFD);
 
     return 0;
